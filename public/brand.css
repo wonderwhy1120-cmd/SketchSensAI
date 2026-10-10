@@ -1,0 +1,37 @@
+.brand-mark{width:32px;height:32px;object-fit:cover;border-radius:50%;}
+.brand-spark{width:14px;height:14px;object-fit:cover;border-radius:50%;vertical-align:-2px;flex:none;}
+.cover-badges .brand-spark{margin-right:7px;}
+.tip b{display:flex;align-items:center;gap:7px;}
+.coach-mark{width:40px;height:40px;border-radius:50%;}
+.shape-scene{width:min(420px,48vw);height:min(420px,48vw);}
+#house-model{display:block;width:100%;height:100%;outline:none;}
+.intro{display:block;}
+.intro>div:first-child{width:100%;}
+.intro h1{display:block;text-align:justify;text-align-last:justify;white-space:nowrap;}
+.intro h1 span,.intro h1 em{white-space:nowrap;}
+.intro .subtitle{display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:none;}
+.canvas-prompt{position:absolute;z-index:2;top:14px;left:12px;right:12px;margin:0;text-align:center;color:#7c847a;font-size:14px;line-height:1.5;pointer-events:none;}
+.canvas-prompt[hidden]{display:none;}
+.auth-dialog{width:min(440px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:0;border:1px solid #dfe4d9;border-radius:12px;background:#fffef9;color:var(--ink);box-shadow:0 24px 80px #07130f55;}
+.auth-dialog::backdrop{background:rgba(9,22,17,.68);backdrop-filter:blur(4px);}
+.auth-form{display:flex;flex-direction:column;gap:14px;padding:32px;}
+.auth-form>.eyebrow{margin:0;color:var(--muted);}
+.auth-form h2{margin:0;font-size:32px;}
+.auth-form>p{margin:0;color:var(--muted);line-height:1.6;}
+.auth-form label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;}
+#login label[hidden]{display:none;}
+.auth-form label span{font-weight:400;color:var(--muted);}
+.auth-form input{width:100%;min-height:42px;padding:10px 12px;border:1px solid #ccd4c4;border-radius:6px;background:#fff;color:var(--ink);}
+.auth-switch{display:grid;grid-template-columns:1fr 1fr;padding:4px;border-radius:7px;background:#edf1e9;}
+.auth-mode{min-height:38px;border:0;border-radius:5px;background:transparent;color:var(--muted);font-size:13px;}
+.auth-mode.selected{background:#fff;color:var(--ink);box-shadow:0 1px 4px #20392f20;}
+.auth-message{min-height:18px;font-size:12px;color:#9a543d;}
+.auth-form .primary{width:100%;}
+.auth-form .quiet{align-self:center;}
+.auth-note{color:var(--muted);font-size:11px;text-align:center;}
+@media(max-width:650px){
+	.intro h1{display:block;}
+	.intro h1 span,.intro h1 em{display:block;white-space:normal;}
+	.intro .subtitle{grid-template-columns:1fr;gap:0;}
+ .auth-form{padding:24px;}
+}

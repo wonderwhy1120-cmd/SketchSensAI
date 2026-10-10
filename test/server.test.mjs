@@ -32,3 +32,12 @@ test('a typed freehand reference works with the demo provider and does not requi
   const result=await analyze({subject:'freehand',phase:'guide',selectedObject:'boat',image:'data:image/png;base64,YQ==',anchors:[]});assert.equal(result.source,'reference');assert.equal(result.guideSource,'online-reference');assert.equal(result.reference.id,'tabler:boat');assert.equal(result.steps.length,1);
  }finally{globalThis.fetch=original;}
 });
+
+test('merged studio serves the cover assets and retains the current drawing controls',async()=>{
+ const page=await(await fetch(base)).text();
+ for(const id of ['cover','house-model','accountPassword','freehandPromptForm','objectCandidateList','liveCoachEnabled','guideControls','beforePanel'])assert.ok(page.includes(`id="${id}"`),`Missing merged UI: ${id}`);
+ for(const [path,type] of [['/auth.js','javascript'],['/brand.css','css'],['/cover-model.js','javascript'],['/house.stl','model/stl'],['/ssai-logo.jpg','image/jpeg'],['/fonts/fitfully/FitfullyRegular-8MBjB.ttf','font/ttf']]){
+  const response=await fetch(base+path);assert.equal(response.status,200,path);assert.ok(response.headers.get('content-type').includes(type),path);assert.ok((await response.arrayBuffer()).byteLength>0,path);
+ }
+ assert.equal((await fetch(base+'/../.env')).status,404);
+});

@@ -7,3 +7,57 @@ export const subjects = {
 };
 export function referenceMarkup(key,color='#526e57'){return `<g fill="none" stroke="${color}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">${subjects[key].paths.map(d=>`<path d="${d}"/>`).join('')}</g>`;}
 export function demoFeedback(subject){const item=subjects[subject];return {source:'template',match:subject,summary:`Practice the main shapes of your ${item.name.toLowerCase()}. These are preset tips, not an AI assessment of your sketch.`,steps:item.tips.map(([title,instruction],i)=>({title,instruction,path:item.paths[i]}))};}
+
+// Match a reference edge to the user's first stroke, then grow the selected subject around it.
+export const seedEdges={
+ house:[[[255,480],[545,480]],[[255,270],[255,480]],[[220,290],[400,145]],[[400,145],[580,290]]],
+ car:[[[190,440],[625,440]],[[300,260],[485,260]],[[235,365],[300,260]]],
+ cup:[[[260,240],[490,240]],[[260,240],[280,455]]],
+ tree:[[[350,490],[450,490]],[[370,355],[350,490]],[[400,465],[400,330]]],
+ bicycle:[[[230,415],[570,415]],[[325,275],[510,275]],[[230,415],[325,275]]]
+};
+export function transformPath(path,scale,angle,tx,ty){
+ const tokens=path.match(/[A-Za-z]|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?/g),result=[];
+ const arity={M:2,L:2,H:1,V:1,C:6,Q:4,A:7,Z:0};let x=0,y=0;
+ const n=value=>Math.round(value*10)/10;
+ const point=(a,b)=>[n(tx+scale*(a*Math.cos(angle)-b*Math.sin(angle))),n(ty+scale*(a*Math.sin(angle)+b*Math.cos(angle)))];
+ for(let i=0;i<tokens.length;){const cmd=tokens[i++],count=arity[cmd];if(count===0){result.push(cmd);continue;}const v=tokens.slice(i,i+count).map(Number);i+=count;
+  if(cmd==='H'){x=v[0];result.push('L'+point(x,y).join(' '));}
+  else if(cmd==='V'){y=v[0];result.push('L'+point(x,y).join(' '));}
+  else if(cmd==='A'){x=v[5];y=v[6];result.push('A'+[n(v[0]*scale),n(v[1]*scale),n(v[2]+angle*180/Math.PI),v[3],v[4],...point(x,y)].join(' '));}
+  else{x=v[count-2];y=v[count-1];const values=[];for(let j=0;j<count;j+=2)values.push(...point(v[j],v[j+1]));result.push(cmd+values.join(' '));}
+ }
+ return result.join(' ');
+}
+export function strokeGuidance(subject,anchors){
+ const item=subjects[subject]||subjects.house;subject=Object.hasOwn(subjects,subject)?subject:'house';
+ const points=anchors.flat().filter(p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite));
+ let a=points[0]||[300,400],b=points.at(-1)||[500,400];
+ // Closed strokes need a useful edge rather than a zero-length start/end match.
+ if(Math.hypot(b[0]-a[0],b[1]-a[1])<10&&points.length>1)b=points.reduce((best,p)=>Math.hypot(p[0]-a[0],p[1]-a[1])>Math.hypot(best[0]-a[0],best[1]-a[1])?p:best,a);
+ if(Math.hypot(b[0]-a[0],b[1]-a[1])<10){a=[Math.max(20,a[0]-40),Math.min(550,a[1])];b=[Math.min(780,a[0]+80),a[1]];}
+ if(a[0]>b[0]||(a[0]===b[0]&&a[1]>b[1]))[a,b]=[b,a];
+ const targetAngle=Math.atan2(b[1]-a[1],b[0]-a[0]);
+ let best;
+ for(let [start,end] of seedEdges[subject]){if(start[0]>end[0]||(start[0]===end[0]&&start[1]>end[1]))[start,end]=[end,start];const angle=targetAngle-Math.atan2(end[1]-start[1],end[0]-start[0]);if(!best||Math.abs(angle)<Math.abs(best.angle))best={start,end,angle};}
+ const scale=Math.max(.12,Math.min(1.25,Math.hypot(b[0]-a[0],b[1]-a[1])/Math.hypot(best.end[0]-best.start[0],best.end[1]-best.start[1])));
+ const tx=a[0]-scale*(best.start[0]*Math.cos(best.angle)-best.start[1]*Math.sin(best.angle));
+ const ty=a[1]-scale*(best.start[0]*Math.sin(best.angle)+best.start[1]*Math.cos(best.angle));
+ return {source:'geometry',match:subject,summary:`Use your first line as the starting edge of a ${item.name.toLowerCase()}. This suggested construction grows around that edge; it is a reference-based guide, not an AI assessment.`,steps:item.paths.map((path,i)=>({title:item.tips[i][0],instruction:item.tips[i][1]+' Use the attached guide to continue from your starting line.',path:transformPath(path,scale,best.angle,tx,ty),guideSource:'geometry'}))};
+}
+
+// AI selects a known reference edge and two real sampled points; it never supplies drawing paths.
+export function referenceGuidance(subject,anchors,alignment){
+ const edge=seedEdges[subject]?.[alignment?.edge];
+ const stroke=anchors[alignment?.stroke];
+ if(!edge||!stroke||!Number.isInteger(alignment.edge)||!Number.isInteger(alignment.stroke)||!Number.isInteger(alignment.start)||!Number.isInteger(alignment.end)||alignment.start===alignment.end)return strokeGuidance(subject,anchors);
+ const a=stroke[alignment.start],b=stroke[alignment.end];
+ if(!a||!b||Math.hypot(b[0]-a[0],b[1]-a[1])<10)return strokeGuidance(subject,anchors);
+ const [start,end]=edge;
+ const scale=Math.hypot(b[0]-a[0],b[1]-a[1])/Math.hypot(end[0]-start[0],end[1]-start[1]);
+ const angle=Math.atan2(b[1]-a[1],b[0]-a[0])-Math.atan2(end[1]-start[1],end[0]-start[0]);
+ if(scale<.1||scale>2)return strokeGuidance(subject,anchors);
+ const tx=a[0]-scale*(start[0]*Math.cos(angle)-start[1]*Math.sin(angle));
+ const ty=a[1]-scale*(start[0]*Math.sin(angle)+start[1]*Math.cos(angle));
+ return {source:'reference',match:subject,guideSource:'reference',steps:subjects[subject].paths.map((path,i)=>({title:subjects[subject].tips[i][0],instruction:subjects[subject].tips[i][1],path:transformPath(path,scale,angle,tx,ty),guideSource:'reference'}))};
+}

@@ -1,6 +1,6 @@
 // Wait for a pause and avoid queuing work on a single-slot local model.
 export class LiveCoach{
- constructor({canRun,request,onResult,onStatus,pauseMs=500,intervalMs=15000,now=()=>Date.now(),setTimer=(fn,delay)=>globalThis.setTimeout(fn,delay),clearTimer=id=>globalThis.clearTimeout(id)}){
+ constructor({canRun,request,onResult,onStatus,pauseMs=500,intervalMs=1000,now=()=>Date.now(),setTimer=(fn,delay)=>globalThis.setTimeout(fn,delay),clearTimer=id=>globalThis.clearTimeout(id)}){
   Object.assign(this,{canRun,request,onResult,onStatus,pauseMs,intervalMs,now,setTimer,clearTimer});
   this.version=0;this.lastRequest=-Infinity;this.timer=null;this.controller=null;this.busy=false;this.dirty=false;
  }

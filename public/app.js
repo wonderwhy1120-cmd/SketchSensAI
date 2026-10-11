@@ -4,6 +4,7 @@ import {guidePlacement} from './guide-placement.js';
 import {subjects,referenceMarkup,demoFeedback,strokeGuidance} from './templates.js';
 const $=id=>document.getElementById(id), canvas=$('canvas'),ctx=canvas.getContext('2d');
 let originalStrokes=new WeakSet();
+function markOriginalStrokes(){originalStrokes=new WeakSet(strokes);for(const stroke of strokes)if(stroke.tool==="pen")stroke.isOriginal=true;}
 let pendingFreehand=null,analysisController=null,analysisVersion=0,analysisBusy=false;
 let fadeFrame=null;
 const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -57,7 +58,7 @@ function updateDrawingLayout(){
 }
 localStorage.removeItem('sketch-cover-dismissed');
 $('cover').classList.remove('hidden');
-function render(fadeOriginal=true,includeOriginal=true){updateDrawingLayout();ctx.clearRect(0,0,800,600);for(const s of strokes){if(!includeOriginal&&originalStrokes.has(s))continue;ctx.save();ctx.globalAlpha=fadeOriginal&&feedback&&$('guide').checked&&s.tool==='pen'&&originalStrokes.has(s)?0:1;ctx.globalCompositeOperation=s.tool==='eraser'?'destination-out':'source-over';ctx.strokeStyle=s.color;ctx.fillStyle=s.color;ctx.lineCap='round';ctx.lineJoin='round';if(s.points.length===1){let p=s.points[0];ctx.beginPath();ctx.arc(p.x,p.y,s.size*p.p/2,0,Math.PI*2);ctx.globalAlpha*=inkOpacity(p,fadeOriginal&&feedback&&$('guide').checked);ctx.fill();}for(let i=1;i<s.points.length;i++){const a=s.points[i-1],b=s.points[i];ctx.globalAlpha=fadeOriginal&&feedback&&$('guide').checked&&s.tool==='pen'&&originalStrokes.has(s)?0:s.tool==='pen'?inkOpacity(b,fadeOriginal&&feedback&&$('guide').checked):1;ctx.lineWidth=s.size*((a.p+b.p)/2);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}ctx.restore();}$('strokeCount').textContent=`${strokes.length} strokes · Mouse, touch & stylus ready`;$('undo').disabled=!strokes.length;$('redo').disabled=!undone.length;if(fadeOriginal&&feedback&&$('guide').checked&&!reducedMotion.matches&&strokes.some(s=>s.tool==='pen'&&!originalStrokes.has(s)&&performance.now()-(s.points.at(-1)?.drawnAt??0)<250)&&fadeFrame===null){fadeFrame=requestAnimationFrame(()=>{fadeFrame=null;render();});}}
+function render(fadeOriginal=true,includeOriginal=true){updateDrawingLayout();ctx.clearRect(0,0,800,600);for(const s of strokes){if(!includeOriginal&&originalStrokes.has(s))continue;ctx.save();ctx.globalAlpha=fadeOriginal&&feedback&&$('guide').checked&&s.tool==='pen'&&originalStrokes.has(s)?0:1;ctx.globalCompositeOperation=s.tool==='eraser'?'destination-out':'source-over';const strokeColor=feedback&&s.tool==="pen"&&s.isOriginal?"#d45122":s.color;ctx.strokeStyle=strokeColor;ctx.fillStyle=strokeColor;ctx.lineCap='round';ctx.lineJoin='round';if(s.points.length===1){let p=s.points[0];ctx.beginPath();ctx.arc(p.x,p.y,s.size*p.p/2,0,Math.PI*2);ctx.globalAlpha*=inkOpacity(p,fadeOriginal&&feedback&&$('guide').checked);ctx.fill();}for(let i=1;i<s.points.length;i++){const a=s.points[i-1],b=s.points[i];ctx.globalAlpha=fadeOriginal&&feedback&&$('guide').checked&&s.tool==='pen'&&originalStrokes.has(s)?0:s.tool==='pen'?inkOpacity(b,fadeOriginal&&feedback&&$('guide').checked):1;ctx.lineWidth=s.size*((a.p+b.p)/2);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}ctx.restore();}$('strokeCount').textContent=`${strokes.length} strokes · Mouse, touch & stylus ready`;$('undo').disabled=!strokes.length;$('redo').disabled=!undone.length;if(fadeOriginal&&feedback&&$('guide').checked&&!reducedMotion.matches&&strokes.some(s=>s.tool==='pen'&&!originalStrokes.has(s)&&performance.now()-(s.points.at(-1)?.drawnAt??0)<250)&&fadeFrame===null){fadeFrame=requestAnimationFrame(()=>{fadeFrame=null;render();});}}
 function point(e){const r=canvas.getBoundingClientRect();return {drawnAt:performance.now(),x:(e.clientX-r.left)*800/r.width,y:(e.clientY-r.top)*600/r.height,p:e.pointerType==='pen'?Math.max(.2,e.pressure)*2:1};}
 canvas.addEventListener('pointerdown',e=>{if(e.button!==0||active||analysisBusy||pendingFreehand)return;liveCoach.change();canvas.setPointerCapture(e.pointerId);active={tool,color:$('color').value,size:Number($('size').value),points:[point(e)],pointer:e.pointerId};strokes.push(active);undone=[];render();});
 canvas.addEventListener('pointermove',e=>{if(!active||e.pointerId!==active.pointer)return;for(const p of e.getCoalescedEvents?.()||[e])active.points.push(point(p));render();});
@@ -209,7 +210,7 @@ async function analyzeSketch(selectedObject=null){
   }
   if(version!==analysisVersion)return;
   if(data.needsSelection){showObjectChoices(data,payload);return;}
-  if(!feedback){if(subject!=='freehand'){before=payload.image;captureOriginalCutout();}originalStrokes=new WeakSet(strokes);}
+  if(!feedback){if(subject!=='freehand'){before=payload.image;captureOriginalCutout();}markOriginalStrokes();}
   pendingFreehand=null;$('objectChoices').hidden=true;$('freehandPrompt').hidden=true;feedback=data;step=0;$('guide').checked=!!settings.shapeGuide;$('settingsShapeGuide').checked=$('guide').checked;showFeedback();
   $('status').textContent=feedback.reference?.fallback?feedback.reference.notice+' Trace each part, then finish your drawing.':feedback.source==='template'?'Preset coaching is active. Connect a vision model for personalized feedback.':feedback.feedbackUnavailable?'Your reference is ready. AI practice feedback is temporarily unavailable.':subject==='freehand'?'Your reference is ready. Trace each part, then finish and save your drawing.':feedback.guideSource==='generated'?'Your AI-generated reference is ready. Trace each part, then compare your drawings.':'Trace the reference drawing one part at a time, then compare your drawings.';
  }catch(error){
@@ -218,7 +219,7 @@ async function analyzeSketch(selectedObject=null){
    $('status').textContent=`${error.message}. ${pendingFreehand?'Choose an object again to retry.':'Your drawing is safe. Retry image generation.'}`;
    if(!pendingFreehand)$('analyze').hidden=false;
   }else{
-   if(!before){before=payload.image;captureOriginalCutout();originalStrokes=new WeakSet(strokes);}
+   if(!before){before=payload.image;captureOriginalCutout();markOriginalStrokes();}
    feedback=strokeGuidance(subject,sketchAnchors());$('guide').checked=!!settings.shapeGuide;$('settingsShapeGuide').checked=$('guide').checked;showFeedback();
    $('status').textContent=`${error.message}. Showing a construction guide built around your starting line instead.`;
   }

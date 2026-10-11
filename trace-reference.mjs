@@ -1,3 +1,4 @@
+// Turn generated line-art images into clean, traceable vector paths.
 import sharp from 'sharp';
 export class OutlineQualityError extends Error{
  constructor(message){super(message);this.name='OutlineQualityError';}

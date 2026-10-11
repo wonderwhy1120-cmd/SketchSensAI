@@ -1,3 +1,4 @@
+// Checks freehand recognition and guide assembly.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {freehandAnalyze} from '../freehand.mjs';

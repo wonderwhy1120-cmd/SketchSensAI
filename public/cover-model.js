@@ -1,3 +1,4 @@
+// Render the decorative 3D house shown on the app welcome screen.
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 

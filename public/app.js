@@ -1,8 +1,10 @@
+// Browser-side drawing state and the main studio interactions.
 import {LiveCoach} from './live-coach.js';
 import {drawingShortcut} from './keybindings.js';
 import {guidePlacement} from './guide-placement.js';
 import {subjects,referenceMarkup,demoFeedback,strokeGuidance} from './templates.js';
 const $=id=>document.getElementById(id), canvas=$('canvas'),ctx=canvas.getContext('2d');
+// Track the learner's starting ink so later strokes can be styled and guided separately.
 let originalStrokes=new WeakSet();
 function markOriginalStrokes(){originalStrokes=new WeakSet(strokes);for(const stroke of strokes)if(stroke.tool==="pen")stroke.isOriginal=true;}
 let pendingFreehand=null,analysisController=null,analysisVersion=0,analysisBusy=false;
@@ -11,6 +13,7 @@ const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
 function inkOpacity(point,animate){if(!animate||reducedMotion.matches)return 1;const progress=Math.max(0,Math.min(1,(performance.now()-(point.drawnAt??0))/250));return 0.15+0.85*(1-Math.pow(1-progress,3));}
 let subject='house',strokes=[],undone=[],active=null,tool='pen',before=null,feedback=null,step=0,provider='demo',profile=null;
 let liveCoaching=false;
+// Settings persist in this browser and are shared between the studio and settings page.
 const settingDefaults={liveSuggestions:true,shapeGuide:false,moreDetail:true,referenceReveal:'progressive'};
 let settings={...settingDefaults};
 try{settings={...settingDefaults,...JSON.parse(localStorage.getItem('sketch-settings')||'{}')};}catch{}
@@ -58,6 +61,7 @@ function updateDrawingLayout(){
 }
 localStorage.removeItem('sketch-cover-dismissed');
 $('cover').classList.remove('hidden');
+// Redraw the canvas from stroke data so undo, guides, and animation stay in sync.
 function render(fadeOriginal=true,includeOriginal=true){updateDrawingLayout();ctx.clearRect(0,0,800,600);for(const s of strokes){if(!includeOriginal&&originalStrokes.has(s))continue;ctx.save();ctx.globalAlpha=fadeOriginal&&feedback&&$('guide').checked&&s.tool==='pen'&&originalStrokes.has(s)?0:1;ctx.globalCompositeOperation=s.tool==='eraser'?'destination-out':'source-over';const strokeColor=feedback&&s.tool==="pen"&&s.isOriginal?"#d45122":s.color;ctx.strokeStyle=strokeColor;ctx.fillStyle=strokeColor;ctx.lineCap='round';ctx.lineJoin='round';if(s.points.length===1){let p=s.points[0];ctx.beginPath();ctx.arc(p.x,p.y,s.size*p.p/2,0,Math.PI*2);ctx.globalAlpha*=inkOpacity(p,fadeOriginal&&feedback&&$('guide').checked);ctx.fill();}for(let i=1;i<s.points.length;i++){const a=s.points[i-1],b=s.points[i];ctx.globalAlpha=fadeOriginal&&feedback&&$('guide').checked&&s.tool==='pen'&&originalStrokes.has(s)?0:s.tool==='pen'?inkOpacity(b,fadeOriginal&&feedback&&$('guide').checked):1;ctx.lineWidth=s.size*((a.p+b.p)/2);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}ctx.restore();}$('strokeCount').textContent=`${strokes.length} strokes · Mouse, touch & stylus ready`;$('undo').disabled=!strokes.length;$('redo').disabled=!undone.length;if(fadeOriginal&&feedback&&$('guide').checked&&!reducedMotion.matches&&strokes.some(s=>s.tool==='pen'&&!originalStrokes.has(s)&&performance.now()-(s.points.at(-1)?.drawnAt??0)<250)&&fadeFrame===null){fadeFrame=requestAnimationFrame(()=>{fadeFrame=null;render();});}}
 function point(e){const r=canvas.getBoundingClientRect();return {drawnAt:performance.now(),x:(e.clientX-r.left)*800/r.width,y:(e.clientY-r.top)*600/r.height,p:e.pointerType==='pen'?Math.max(.2,e.pressure)*2:1};}
 canvas.addEventListener('pointerdown',e=>{if(e.button!==0||active||analysisBusy||pendingFreehand)return;liveCoach.change();canvas.setPointerCapture(e.pointerId);active={tool,color:$('color').value,size:Number($('size').value),points:[point(e)],pointer:e.pointerId};strokes.push(active);undone=[];render();});
@@ -71,6 +75,7 @@ document.addEventListener('keydown',event=>{
  event.preventDefault();$(action).click();
 });
 $('clear').onclick=()=>{if(strokes.length&&!confirm('Clear this sketch and its guidance?'))return;reset();};
+// Save a tight thumbnail of the first sketch before displaying guidance.
 function captureOriginalCutout(){
  render(false);
  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
@@ -84,6 +89,7 @@ function captureOriginalCutout(){
  $('originalCutoutImage').src=cutout.toDataURL('image/png');$('originalCutout').hidden=false;
  render();
 }
+// Cancel pending AI work and return the studio to a clean drawing state.
 function reset(){resetLiveCoach();analysisVersion++;analysisController?.abort();analysisBusy=false;pendingFreehand=null;$('objectChoices').hidden=true;$('objectChoiceFields').disabled=false;$('freehandPrompt').hidden=subject!=='freehand';$('freehandObject').value='';$('moreImageDetail').disabled=false;$('freehandObject').disabled=false;$('generateObjectGuide').disabled=false;$('guide').disabled=false;$('analyze').disabled=false;$('originalCutout').hidden=true;$('originalCutoutImage').removeAttribute('src');originalStrokes=new WeakSet();strokes=[];undone=[];before=null;feedback=null;step=0;$('finish').disabled=true;$('analyze').hidden=false;$('guideControls').hidden=true;$('guide').checked=!!settings.shapeGuide;$('settingsShapeGuide').checked=$('guide').checked;$('overlay').style.display='none';$('feedback').innerHTML='<h3>Meet your drawing guide.</h3><p>Sketch the subject in your own way, then ask for guidance on shapes and proportions.</p><div class="coach-empty"><img class="brand-spark coach-mark" src="/ssai-logo.jpg" alt="" aria-hidden="true"><p>Your drawing guide will appear here.</p></div>';$('status').textContent='';render();}
 function select(key){if(key!==subject&&strokes.length&&!confirm('Start a new subject? Your current unsaved sketch will be cleared.'))return;subject=key;reset();$('canvasPrompt').textContent=key==='freehand'?'':`Try drawing a 2D ${subjects[key].name.toLowerCase()} to get started.`;$('drawingTitle').textContent=key==='freehand'?'What will you draw today?':subjects[key].title;$('finish').textContent=key==='freehand'?'Finish drawing →':'Finish & compare →';$('analyze').innerHTML=key==='freehand'?'Guess my drawing <span>↗</span>':'Get drawing guidance <span>↗</span>';$('reference').setAttribute('viewBox','0 0 800 600');$('reference').innerHTML=key==='freehand'?'':referenceMarkup(key);$('referencePhoto').hidden=true;$('reference').style.display='';$('referenceSource').replaceChildren();$('referenceLabel').textContent=key==='freehand'?'YOUR REFERENCE WILL APPEAR HERE':'SIMPLIFIED 2D REFERENCE';document.querySelectorAll('.subject').forEach(b=>b.classList.toggle('selected',b.dataset.key===key));$('presetsMenu').hidden=true;$('presetsToggle').setAttribute('aria-expanded','false');$('presetsToggle').textContent='Presets ▾';updateOverlay();}
 function addSubjectButton(key,item,parent){const b=document.createElement('button');b.className='subject';b.dataset.key=key;b.innerHTML=`<svg viewBox="0 0 800 600" aria-hidden="true">${key==='freehand'?'<path d="M240 430 L280 310 L500 140 L580 220 L360 390 Z" fill="none" stroke="#526e57" stroke-width="18"/>':referenceMarkup(key)}</svg><span>${item.name}<small>${item.level}</small></span>`;b.onclick=()=>select(key);parent.append(b);}

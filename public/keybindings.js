@@ -1,3 +1,4 @@
+// Map undo and redo shortcuts without intercepting normal text editing.
 export function drawingShortcut(event){
  if(event.defaultPrevented||event.isComposing||event.altKey||!(event.metaKey||event.ctrlKey)||event.key.toLowerCase()!=='z')return null;
  const target=event.target;

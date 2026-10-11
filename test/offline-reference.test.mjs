@@ -1,3 +1,4 @@
+// Checks offline reference matching and geometry.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import catalog from '../public/references/lucide-outlines.json' with {type:'json'};

@@ -1,3 +1,4 @@
+// Prepare sketch images for recognition while preserving their original orientation.
 import sharp from 'sharp';
 const background='#fffef9';
 const dataUrl=bytes=>`data:image/png;base64,${bytes.toString('base64')}`;

@@ -1,3 +1,4 @@
+// Build an offline outline when generated or online references are unavailable.
 import {transformDrawing} from './reference-drawings.mjs';
 import catalog from './public/references/lucide-outlines.json' with {type:'json'};
 

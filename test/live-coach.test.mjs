@@ -1,3 +1,4 @@
+// Checks pause timing and stale live-coaching responses.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {coachDrawing} from '../live-coach.mjs';

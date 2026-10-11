@@ -1,3 +1,4 @@
+// Checks image preparation for sketch recognition.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';

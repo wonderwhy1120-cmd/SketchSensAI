@@ -1,3 +1,4 @@
+// Checks model request validation and feedback normalization.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';

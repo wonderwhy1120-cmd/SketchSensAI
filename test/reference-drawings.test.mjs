@@ -1,3 +1,4 @@
+// Checks reference lookup, path normalization, and placement.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizePath,sourceDrawingPaths,placeDrawing,findReference} from '../reference-drawings.mjs';

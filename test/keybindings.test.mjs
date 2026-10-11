@@ -1,3 +1,4 @@
+// Checks undo and redo shortcut handling.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {drawingShortcut} from '../public/keybindings.js';

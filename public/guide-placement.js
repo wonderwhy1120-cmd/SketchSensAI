@@ -1,3 +1,4 @@
+// Fit each reference part to the fixed drawing canvas with a small margin.
 export function guidePlacement(bounds,fillPage=false){
  const {x,y,width,height}=bounds;
  if(![x,y,width,height].every(Number.isFinite)||width<0||height<0||width+height<=0)throw Error('Invalid guide bounds');

@@ -1,3 +1,4 @@
+// Generate, cache, and validate Freehand reference images from the image provider.
 import {InferenceClient} from '@huggingface/inference';
 import {traceReferenceImage,repairReferenceImage,OutlineQualityError} from './trace-reference.mjs';
 

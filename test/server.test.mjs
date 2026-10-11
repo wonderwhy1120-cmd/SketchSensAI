@@ -1,3 +1,4 @@
+// Checks API responses and safe static-file serving.
 import {test,after,before} from 'node:test';
 import assert from 'node:assert/strict';
 import {server,analyze,validateFeedback,validateAnchors,isVisibleGuide} from '../server.mjs';

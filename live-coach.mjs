@@ -1,3 +1,4 @@
+// Send pause-triggered drawing snapshots to the configured local vision model.
 const validImage=value=>typeof value==='string'&&value.length<=3_000_000&&/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(value);
 export function liveCoachAvailable(){return process.env.AI_PROVIDER==='local'&&!!process.env.LOCAL_AI_MODEL;}
 export async function coachDrawing({subject,image,referenceImage,target='',partInstruction=''},requestSignal){

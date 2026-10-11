@@ -1,3 +1,4 @@
+// Demo profile controls stored in this browser; this is not server authentication.
 const $=id=>document.getElementById(id);
 let mode='login';
 

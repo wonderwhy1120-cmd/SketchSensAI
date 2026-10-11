@@ -1,3 +1,4 @@
+// Recognize freehand sketches and assemble a practice guide from selected objects.
 import {placeDrawing} from './reference-drawings.mjs';
 import {generateReference} from './generated-reference.mjs';
 import {recognitionViews} from './recognition-image.mjs';

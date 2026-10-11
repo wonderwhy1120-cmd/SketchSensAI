@@ -1,3 +1,4 @@
+// Fetch and transform vector outlines so guides fit the drawing canvas.
 const api='https://api.iconify.design';
 const numberPattern=/[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?/g;
 const tokenPattern=/[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?/g;

@@ -1,3 +1,4 @@
+// Historical one-off CSS migration script; it is not used by the running app.
 const fs = require('fs');
 const filePath = 'C:/Users/venuh/SketchSensAI/public/style.css';
 let css = fs.readFileSync(filePath, 'utf8');

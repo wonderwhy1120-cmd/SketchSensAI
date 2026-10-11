@@ -2,7 +2,7 @@ import sharp from 'sharp';
 export class OutlineQualityError extends Error{
  constructor(message){super(message);this.name='OutlineQualityError';}
 }
-function simplify(points,tolerance=.8){
+function simplify(points,tolerance=.9){
  if(points.length<3)return points;
  const keep=new Uint8Array(points.length);keep[0]=keep[points.length-1]=1;const stack=[[0,points.length-1]];
  while(stack.length){
@@ -14,7 +14,7 @@ function simplify(points,tolerance=.8){
  return points.filter((_,i)=>keep[i]);
 }
 // Zhang–Suen thinning keeps the centerline of each actual raster stroke.
-export function tracePixels(data,width,height,{tolerance=.8,maxPaths=180,trim=false}={}){
+export function tracePixels(data,width,height,{tolerance=.4,maxPaths=2000,trim=false}={}){
  const stride=width+2,mask=new Uint8Array(stride*(height+2));let ink=0;
  for(let y=0;y<height;y++)for(let x=0;x<width;x++)if(data[y*width+x]<175){mask[(y+1)*stride+x+1]=1;ink++;}
  if(ink<12||ink/(width*height)>.2)throw new OutlineQualityError('The generated image is not a clean outline drawing');
@@ -66,7 +66,9 @@ export function tracePixels(data,width,height,{tolerance=.8,maxPaths=180,trim=fa
  };
  for(const i of indices){const adjacent=neighbors(i);if(adjacent.length!==2)for(const next of adjacent)if(!visited.has(edge(i,next)))walk(i,next);}
  for(const i of indices)for(const next of neighbors(i))if(!visited.has(edge(i,next)))walk(i,next);
- let paths=lines.filter(({points})=>!dots.some(dot=>points.every(p=>Math.hypot(p[0]-dot.x,p[1]-dot.y)<dot.r+2))).sort((a,b)=>b.length-a.length).map(({points})=>{
+ let paths=lines.filter(({points})=>!dots.some(dot=>points.every(p=>Math.hypot(p[0]-dot.x,p[1]-dot.y)<dot.r+2))).sort((a,b)=>b.length-a.length).flatMap(({points})=>{
+  const chunks=[];for(let i=0;i<points.length-1;i+=79)chunks.push(points.slice(i,i+80));return chunks;
+ }).map(points=>{
   if(points.length<3)return points.map((p,i)=>`${i?'L':'M'}${p.join(' ')}`).join(' ');
   const midpoint=(a,b)=>a.map((v,i)=>(v+b[i])/2).join(' ');
   let d=`M${points[0].join(' ')} L${midpoint(points[0],points[1])}`;
@@ -76,7 +78,7 @@ export function tracePixels(data,width,height,{tolerance=.8,maxPaths=180,trim=fa
  // Filled eyes and other small marks retain their original position and size.
  for(const {x,y,r} of dots)paths.push(`M${x-r} ${y} A${r} ${r} 0 1 0 ${x+r} ${y} A${r} ${r} 0 1 0 ${x-r} ${y}`);
  if(trim)paths=paths.filter(path=>path.length<5800).slice(0,maxPaths);
- if(!paths.length||paths.length>maxPaths||paths.some(path=>path.length>=5800))throw new OutlineQualityError('The generated outline is too detailed to trace');
+ if(!paths.length||paths.length>maxPaths||paths.some(path=>path.length>=5800))throw new OutlineQualityError(`The generated outline could not be traced (${paths.length} paths; limit ${maxPaths}; longest path ${Math.max(0,...paths.map(path=>path.length))} characters)`);
  return paths;
 }
 
@@ -88,14 +90,14 @@ async function outlineReference(paths,width,height,repaired){
 
 // Recover visible contours from colored, shaded or filled generations. The preview
 // is rendered from these same simplified paths, never from the unsuitable bitmap.
-export async function repairReferenceImage(bytes){
+export async function repairReferenceImage(bytes,{tolerance=.6,edgeTolerance=.8}={}){
  if(!Buffer.isBuffer(bytes)||bytes.length>10_000_000)throw Error('Invalid reference image');
  const {data,info}=await sharp(bytes,{limitInputPixels:16_000_000}).rotate().flatten({background:'#fff'}).resize({width:480,height:360,fit:'inside',withoutEnlargement:true}).greyscale().blur(.8).removeAlpha().raw().toBuffer({resolveWithObject:true});
  const {width,height}=info;
  // Try the ink itself first. Running an edge detector on an existing outline
  // creates two contours (one on each side of every stroke).
  const ink=Uint8Array.from(data,value=>value<225?0:255);
- try{return await outlineReference(tracePixels(ink,width,height,{tolerance:1.2,maxPaths:80}),width,height,true);}catch(error){if(!(error instanceof OutlineQualityError))throw error;}
+ try{return await outlineReference(tracePixels(ink,width,height,{tolerance,maxPaths:2000}),width,height,true);}catch(error){if(!(error instanceof OutlineQualityError))throw error;}
  const area=width*height,magnitude=new Float32Array(area),direction=new Uint8Array(area),values=[];
  for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){
   const i=y*width+x,gx=-data[i-width-1]+data[i-width+1]-2*data[i-1]+2*data[i+1]-data[i+width-1]+data[i+width+1],gy=-data[i-width-1]-2*data[i-width]-data[i-width+1]+data[i+width-1]+2*data[i+width]+data[i+width+1];
@@ -108,13 +110,13 @@ export async function repairReferenceImage(bytes){
   const i=y*width+x,offset=offsets[direction[i]];
   if(magnitude[i]>=threshold&&magnitude[i]>=magnitude[i-offset]&&magnitude[i]>magnitude[i+offset])edges[i]=0;
  }
- const paths=tracePixels(edges,width,height,{tolerance:2,maxPaths:80});
+ const paths=tracePixels(edges,width,height,{tolerance:edgeTolerance,maxPaths:2000});
  const result=await outlineReference(paths,width,height,true);
- // Reapply the normal quality gate to the recovered pure outline.
- await traceReferenceImage(Buffer.from(result.url.split(',')[1],'base64'));
+ // The recovered preview is drawn solely from validated unfilled stroke paths.
+ // Retracing it would fragment fine detail and reject dense but valid linework.
  return result;
 }
-export async function traceReferenceImage(bytes){
+export async function traceReferenceImage(bytes,{tolerance=.4}={}){
  if(!Buffer.isBuffer(bytes)||bytes.length>10_000_000)throw Error('Invalid reference image');
  const image=sharp(bytes,{limitInputPixels:16_000_000}).rotate().flatten({background:'#fff'}).resize({width:720,height:540,fit:'inside',withoutEnlargement:true});
  const {data:rgb,info:colorInfo}=await image.clone().toColourspace('srgb').removeAlpha().raw().toBuffer({resolveWithObject:true});
@@ -135,7 +137,7 @@ export async function traceReferenceImage(bytes){
  const area=colorInfo.width*colorInfo.height;
  if(paper/area<.8||midtones/area>.06||colored/area>.005)throw new OutlineQualityError('The generated image has shading, color or too little white paper');
  const {data,info}=await image.clone().greyscale().removeAlpha().raw().toBuffer({resolveWithObject:true});
- const paths=tracePixels(data,info.width,info.height);
+ const paths=tracePixels(data,info.width,info.height,{tolerance});
  // Remove mild off-white paper and anti-aliasing grays from an accepted outline.
  const png=await image.greyscale().threshold(175).png().toBuffer();
  return {width:info.width,height:info.height,paths,url:`data:image/png;base64,${png.toString('base64')}`};

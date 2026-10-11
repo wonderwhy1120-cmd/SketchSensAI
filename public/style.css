@@ -27,3 +27,12 @@
 
 .guide-controls .secondary,.object-choices .secondary,.modal-actions .secondary{border-color:#ccd4c4;background:transparent;color:var(--ink);box-shadow:none}
 @media(min-width:651px) and (max-width:1050px){.workspace.canvas-expanded{grid-template-columns:170px minmax(0,1fr)}}
+
+#imageDetailControl{display:flex;align-items:center;gap:6px;white-space:nowrap;color:var(--ink)}
+#imageDetailControl[hidden]{display:none}
+#imageDetailControl input{width:auto;margin:0;accent-color:var(--green)}
+
+.reference-piece{animation:reference-piece-in .45s ease-out both}
+.reference-piece-current{animation:reference-piece-in .65s cubic-bezier(.2,.7,.25,1) both}
+@keyframes reference-piece-in{from{opacity:0;stroke-dasharray:1;stroke-dashoffset:1}to{opacity:1;stroke-dasharray:1;stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){.reference-piece,.reference-piece-current{animation:none}}

@@ -1,8 +1,6 @@
-import {findReference,placeDrawing} from './reference-drawings.mjs';
+import {placeDrawing} from './reference-drawings.mjs';
 import {generateReference} from './generated-reference.mjs';
-import {offlineReference,simpleObjectDescription,simpleSceneReference} from './offline-reference.mjs';
 import {recognitionViews} from './recognition-image.mjs';
-export {findReference} from './reference-drawings.mjs';
 const cleanText=(value,max=180)=>typeof value==='string'?value.trim().slice(0,max):'';
 const suggestions=value=>Array.isArray(value)?[...new Set(value.map(v=>cleanText(v)).filter(Boolean))].slice(0,3):[];
 const ambiguous=value=>!value||/^(unknown(?: object)?|unclear|unidentified|line|shape|polygon|freehand|scribble)$/i.test(value);
@@ -19,7 +17,8 @@ export async function recognizeFreehand({image,anchors=[]},ask){
  if(!candidates.length)throw Error('The model could not suggest an object for this sketch');
  return {source:'local',needsSelection:true,candidates,summary:cleanText(result?.summary,1200),suggestions:suggestions(result?.suggestions)};
 }
-export async function freehandAnalyze({image,anchors=[],phase,selectedObject},ask,isVisibleGuide,options={}){
+export async function freehandAnalyze({image,anchors=[],phase,selectedObject,detail='more'},ask,isVisibleGuide,options={}){
+ if(!['more','less'].includes(detail))throw Error('Choose a valid image detail level');
  if(phase!==undefined&&!['recognize','guide'].includes(phase))throw Error('Invalid freehand phase');
  if(phase==='recognize')return recognizeFreehand({image,anchors},ask);
  let recognition,guess;
@@ -28,23 +27,19 @@ export async function freehandAnalyze({image,anchors=[],phase,selectedObject},as
   guess={object:selectedObject.trim(),referenceQuery:selectedObject.trim(),confidence:'low'};
  }else{recognition=await recognizeFreehand({image,anchors},ask);guess=recognition.candidates[0];}
  const object=guess.object,hasSketch=anchors.some(stroke=>stroke.length>0);
- let reference=simpleSceneReference(object);
- if(!reference)try{reference=await findReference(object);}catch{
-  const backup=offlineReference(object,anchors);
-  if(backup.matched&&simpleObjectDescription(object))reference=backup;
-  else try{reference=await (options.generateReference||generateReference)(object);}catch{reference=backup;}
- }
+ const reference=await (options.generateReference||generateReference)(object,{detail});
+ if(reference.fallback||reference.composed||!reference.generated)throw Error('Image generation did not return a generated reference. Please retry.');
  let paths;
  try{paths=placeDrawing(reference.paths,reference.width,reference.height,anchors);if(!paths.length||!paths.every(isVisibleGuide))throw Error('Unsupported tracing lines');}
- catch{reference=offlineReference(object,anchors);paths=placeDrawing(reference.paths,reference.width,reference.height,anchors);}
+ catch{throw Error('The generated reference could not be converted into tracing lines. Please retry; no substitute reference was used.');}
  const partCount=Math.min(3,paths.length),titles=['Start the reference','Build the shape','Complete the details'];
  const groups=[];let group=[];
  for(const path of paths){if(group.length&&(group.join(' ').length+path.length+1>5400||group.length>=Math.ceil(paths.length/partCount))){groups.push(group);group=[];}group.push(path);}if(group.length)groups.push(group);
- const steps=groups.map((group,index)=>({title:titles[Math.min(index,2)],instruction:reference.fallback?'Trace this simplified backup outline one part at a time.':reference.generated?'Trace these outlines extracted from the reference image, then continue to the next part.':'Trace these lines from the downloaded 2D drawing, then move to the next part.',path:group.join(' ')}));
+ const steps=groups.map((group,index)=>({title:titles[Math.min(index,2)],instruction:'Trace these outlines extracted from the generated reference image, then continue to the next part.',path:group.join(' ')}));
  if(!steps.every(s=>isVisibleGuide(s.path)))throw Error('The reference drawing is too complex to trace; try a simpler description');
  let assessment={},feedbackUnavailable=false;
- if(hasSketch&&!(reference.fallback&&!reference.matched)){
+ if(hasSketch){
   try{assessment=await ask(`Give kind drawing-teacher feedback for the user's sketch of ${JSON.stringify(object)}. Image 1 is their ACTUAL sketch. The guide is ${reference.generated?'an AI-generated image':'an online'} 2D outline drawing titled ${JSON.stringify(reference.title)}. The application traces the reference; do NOT invent, redesign or return any SVG geometry. ${reference.raster?'Image 2 is the actual tracing reference.':`Source outline paths in ${reference.width}x${reference.height} coordinates: ${JSON.stringify(reference.paths)}`}. Suggest 1 to 3 concrete improvements only where needed: steadier straight edges, smoother curves, symmetry, proportions or connecting gaps. Do not tell the user to straighten intentional curves. Return JSON only {"improvement":"specific advice under 40 words","suggestions":["actionable tip under 20 words"]}.`,reference.raster?[image,reference.url]:[image]);}catch{feedbackUnavailable=true;}
  }
- return {source:'local',match:'freehand',object,confidence:guess.confidence,chosen:phase==='guide',reference,simplifiedReference:true,fitToPage:reference.fallback||reference.raster||!hasSketch,guideSource:reference.fallback?'fallback-reference':reference.generated?'generated':'online-reference',summary:reference.notice||recognition?.summary||(reference.generated?`${reference.cachedExample?'A prepared AI-generated reference is ready':reference.repaired?'AI reference converted into clean tracing contours':'AI created a line-art reference'} for “${object}”. Trace it one part at a time.`:`Trace the online 2D ${reference.title} drawing one part at a time.`),improvement:cleanText(assessment?.improvement,1000)||'Follow the reference outline using smooth, deliberate strokes. Start with the main shapes, then add the smaller details.',suggestions:hasSketch?(suggestions(assessment?.suggestions).length?suggestions(assessment?.suggestions):recognition?.suggestions||[]):[],feedbackUnavailable,steps};
+ return {source:'local',match:'freehand',object,detail,confidence:guess.confidence,chosen:phase==='guide',reference,simplifiedReference:true,fitToPage:reference.raster||!hasSketch,guideSource:'generated',summary:reference.notice||recognition?.summary||(reference.generated?`${reference.cachedExample?'A prepared AI-generated reference is ready':reference.repaired?'AI reference converted into clean tracing contours':'AI created a line-art reference'} for “${object}”. Trace it one part at a time.`:`Trace the online 2D ${reference.title} drawing one part at a time.`),improvement:cleanText(assessment?.improvement,1000)||'Follow the reference outline using smooth, deliberate strokes. Start with the main shapes, then add the smaller details.',suggestions:hasSketch?(suggestions(assessment?.suggestions).length?suggestions(assessment?.suggestions):recognition?.suggestions||[]):[],feedbackUnavailable,steps};
 }

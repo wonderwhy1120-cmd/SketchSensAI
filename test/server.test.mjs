@@ -26,11 +26,10 @@ test('reference alignment preserves every subject component and falls back for i
  }
 });
 
-test('a typed freehand reference works with the demo provider and does not require a vision model',async()=>{
- const original=globalThis.fetch;
- try{globalThis.fetch=async url=>({ok:true,json:async()=>String(url).includes('/search?')?{icons:['tabler:boat'],collections:{tabler:{license:{title:'MIT'}}}}:{width:24,height:24,icons:{boat:{body:'<path fill="none" d="M2 10 L22 10 L18 20 L6 20 Z"/>'}}}});
-  const result=await analyze({subject:'freehand',phase:'guide',selectedObject:'boat',image:'data:image/png;base64,YQ==',anchors:[]});assert.equal(result.source,'reference');assert.equal(result.guideSource,'online-reference');assert.equal(result.reference.id,'tabler:boat');assert.equal(result.steps.length,1);
- }finally{globalThis.fetch=original;}
+test('typed freehand generation propagates configuration errors instead of returning an icon',async()=>{
+ const keys=['HF_IMAGE_TOKEN','HF_TOKEN','HF_IMAGE_MODEL'],saved=keys.map(key=>process.env[key]);keys.forEach(key=>delete process.env[key]);
+ try{await assert.rejects(analyze({subject:'freehand',phase:'guide',selectedObject:'red car',image:'data:image/png;base64,YQ==',anchors:[]}),/image-generation model/);}
+ finally{keys.forEach((key,i)=>{if(saved[i]!==undefined)process.env[key]=saved[i];});}
 });
 
 test('merged studio serves the cover assets and retains the current drawing controls',async()=>{

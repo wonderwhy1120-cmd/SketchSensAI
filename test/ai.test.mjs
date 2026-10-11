@@ -19,7 +19,7 @@ test('local adapter requests concise guidance and handles truncated output',asyn
  }finally{globalThis.fetch=originalFetch;}
 });
 
-test('local freehand adapter passes recognition and explicit object choice to online tracing',async()=>{
+test('local recognition cannot substitute an icon when image generation is unconfigured',async()=>{
  const originalFetch=globalThis.fetch;let calls=0;
  try{
   globalThis.fetch=async(url,options)=>{
@@ -32,7 +32,7 @@ test('local freehand adapter passes recognition and explicit object choice to on
   };
   const image='data:image/png;base64,YQ==',anchors=[[[200,300],[600,300]]];
   const guesses=await analyze({subject:'freehand',phase:'recognize',image,anchors});assert.equal(guesses.needsSelection,true);assert.equal(guesses.source,'local');
-  const guide=await analyze({subject:'freehand',phase:'guide',selectedObject:'bowl',image,anchors});assert.equal(guide.object,'bowl');assert.equal(guide.chosen,true);assert.equal(guide.steps.length,1);assert.equal(guide.guideSource,'online-reference');assert.equal(guide.suggestions[0],'Use a smoother curve for the base.');assert.equal(calls,2);assert.ok(!guide.steps[0].path.includes('999'));
+  await assert.rejects(analyze({subject:'freehand',phase:'guide',selectedObject:'bowl',image,anchors}),/image-generation model/);assert.equal(calls,1);
  }finally{globalThis.fetch=originalFetch;}
 });
 
@@ -68,6 +68,6 @@ test('fal receives the outline controls and downloads the result under the share
    if(String(url).includes('/requests/test-request'))return Response.json({images:[{url:'https://assets.test/outline.png'}]});
    assert.equal(String(url),'https://assets.test/outline.png');downloads++;return new Response(bytes,{headers:{'Content-Type':'image/png'}});
   };
-  assert.deepEqual(await generateImage('a house in the woods',{attempt:1,signal}),bytes);assert.equal(submissions,1);assert.equal(downloads,1);
+  assert.deepEqual(await generateImage('a house in the woods',{attempt:1,detail:'less',signal}),bytes);assert.equal(submissions,1);assert.equal(downloads,1);
  }finally{globalThis.fetch=original;keys.forEach((key,i)=>{if(saved[i]===undefined)delete process.env[key];else process.env[key]=saved[i];});}
 });

@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
-import {generateReference,referencePrompt,imageParameters} from '../generated-reference.mjs';
+import {generateReference,referencePrompt,imageParameters,excludedDetails} from '../generated-reference.mjs';
 import {traceReferenceImage,repairReferenceImage,tracePixels} from '../trace-reference.mjs';
 import {isVisibleGuide} from '../server.mjs';
 import {guidePlacement} from '../public/guide-placement.js';
@@ -17,7 +17,7 @@ test('colored, shaded and solid subjects become clean outlines with white interi
 });
 test('exhausted quality retries recover source contours without any additional paid generation',async()=>{
  const bad=await picture('<rect x="30" y="20" width="100" height="70" fill="#555"/>');let calls=0;
- const result=await generateReference('a shaded box',{generateImage:async()=>{calls++;return bad;}});
+ const result=await generateReference('a shaded box',{detail:'less',generateImage:async()=>{calls++;return bad;}});
  assert.equal(calls,2);assert.equal(result.repaired,true);assert.equal(result.generated,true);assert.ok(result.paths.every(isVisibleGuide));
 });
 
@@ -27,12 +27,12 @@ test('generated reference keeps the actual image and extracts its outlines inste
  assert.equal(calls,1);assert.equal(result.raster,true);assert.equal(result.generated,true);assert.equal(result.cachedExample,false);assert.equal(result.width,160);assert.equal(result.height,120);assert.match(result.url,/^data:image\/png;base64,/);assert.ok(result.paths.every(isVisibleGuide));assert.ok(result.paths.some(path=>path.includes('A')));assert.deepEqual(result.credits,[]);
 });
 
-test('overly detailed prepared scenes are not substituted for a fresh beginner reference',async()=>{
+test('detailed scene contours remain available rather than being rejected by preschool limits',async()=>{
  const {readFile}=await import('node:fs/promises');
  const oldScene=await readFile(new URL('../public/references/bunny-forest.png',import.meta.url));
  let calls=0;
- await assert.rejects(generateReference('a bunny in the forest',{generateImage:async()=>{calls++;return oldScene;}}),/no recoverable subject contours/);
- assert.equal(calls,2);
+ const result=await generateReference('a bunny in the forest',{generateImage:async()=>{calls++;return oldScene;}});
+ assert.ok(result.paths.length>35);assert.ok(result.paths.every(isVisibleGuide));assert.ok(calls<=2);
 });
 
 test('blank, dense and invalid reference images do not become invented guides',async()=>{
@@ -57,14 +57,14 @@ test('an unsuitable generation gets one stricter retry within the shared deadlin
  const result=await generateReference('a house in the woods',{generateImage:async(description,options)=>{assert.equal(description,'a house in the woods');attempts.push(options);return options.attempt?good:bad;}});
  assert.equal(result.raster,true);assert.deepEqual(attempts.map(a=>a.attempt),[0,1]);assert.equal(attempts[0].signal,attempts[1].signal);
  let calls=0;
- await assert.rejects(generateReference('a busy forest',{generateImage:async()=>{calls++;return bad;}}),/no recoverable subject contours/);assert.equal(calls,2);
+ await assert.rejects(generateReference('a busy forest',{generateImage:async()=>{calls++;return bad;}}),/Could not convert the generated image into tracing lines/);assert.equal(calls,2);
  calls=0;
  await assert.rejects(generateReference('a bird',{generateImage:async()=>{calls++;throw Error('Provider billing error');}}),/Provider billing error/);assert.equal(calls,1);
 });
 
 test('one-attempt setting disables the paid quality retry',async()=>{
  const original=process.env.IMAGE_MAX_ATTEMPTS;process.env.IMAGE_MAX_ATTEMPTS='1';let calls=0;
- try{await assert.rejects(generateReference('a lake',{generateImage:async()=>{calls++;return picture('');}}),/no recoverable subject contours/);assert.equal(calls,1);}
+ try{await assert.rejects(generateReference('a lake',{generateImage:async()=>{calls++;return picture('');}}),/Could not convert the generated image into tracing lines/);assert.equal(calls,1);}
  finally{if(original===undefined)delete process.env.IMAGE_MAX_ATTEMPTS;else process.env.IMAGE_MAX_ATTEMPTS=original;}
 });
 
@@ -93,7 +93,7 @@ test('complete-guide fitting enlarges a tiny reference while preserving margins 
 
 test('image prompt includes the complete user request and excludes collage and shading',()=>{
  const prompt=referencePrompt('a boat by a lighthouse');assert.match(prompt,/a boat by a lighthouse/);assert.match(prompt,/pure white background/i);assert.match(prompt,/collage/);
- assert.match(prompt,/WHITE interiors/);assert.match(referencePrompt('a boat by a lighthouse',1),/Reduce detail even further/);
+ assert.match(prompt,/WHITE interiors/);assert.match(prompt,/detailed black-and-white/);assert.doesNotMatch(prompt,/Woodland scenes should/);assert.doesNotMatch(prompt,/preschool diagram\. Flat|at most two windows|85 percent/);assert.match(referencePrompt('a boat by a lighthouse',1,'less'),/Reduce detail even further/);assert.match(referencePrompt('a boat by a lighthouse',1,'more'),/Keep the full richness/);
  const parameters=imageParameters('Qwen/Qwen-Image-2512','fal-ai');assert.deepEqual(parameters.image_size,{width:1024,height:768});assert.match(parameters.negative_prompt,/solid black fills/);assert.equal(parameters.guidance_scale,4);assert.equal(parameters.num_inference_steps,28);
  assert.equal(imageParameters('black-forest-labs/FLUX.1-schnell','fal-ai').num_inference_steps,undefined);
 });
@@ -104,9 +104,42 @@ test('outline repair follows a colored stroke once instead of outlining both edg
  const numbers=result.paths[0].match(/-?\d+(?:\.\d+)?/g).map(Number);
  assert.ok(Math.abs(numbers[0]-20)<4);assert.ok(Math.abs(numbers[1]-90)<4);
 });
-test('too many individual strokes trigger a simpler retry rather than a busy tracing guide',async()=>{
+test('requested detail strokes are preserved without an unnecessary generation retry',async()=>{
  const strokes=Array.from({length:40},(_,i)=>`<path d="M${10+(i%8)*18} ${10+Math.floor(i/8)*20} h10" stroke="black" stroke-width="2"/>`).join('');
  const busy=await picture(strokes),simple=await picture('<path d="M20 90 L80 20 L140 90 Z" fill="none" stroke="black" stroke-width="3"/>');let calls=0;
  const result=await generateReference('a complicated object',{generateImage:async()=>++calls===1?busy:simple});
- assert.equal(calls,2);assert.ok(result.paths.length<10);
+ assert.equal(calls,1);assert.ok(result.paths.length>=40);assert.ok(result.paths.every(isVisibleGuide));
+});
+
+test('a building with wings retains both attached wing outlines and building details',async()=>{
+ const bytes=await picture('<g fill="none" stroke="black" stroke-width="2"><path d="M55 100 L55 45 L80 25 L105 45 L105 100 Z"/><path d="M55 55 Q30 20 5 30 Q10 60 55 80 M105 55 Q130 20 155 30 Q150 60 105 80"/><path d="M72 100 L72 80 L88 80 L88 100"/>'+Array.from({length:40},(_,i)=>{const x=60+(i%8)*5,y=48+Math.floor(i/8)*5;return `<path d="M${x} ${y} L${x+2} ${y}"/>`;}).join('')+'</g>');
+ let calls=0;const result=await generateReference('a building with wings',{generateImage:async description=>{calls++;assert.equal(description,'a building with wings');return bytes;}});
+ assert.equal(calls,1);assert.ok(result.paths.length>=4);assert.ok(result.paths.every(isVisibleGuide));
+ const coordinates=result.paths.flatMap(path=>path.match(/-?\d+(?:\.\d+)?/g).map(Number));assert.ok(coordinates.some(n=>n<15));assert.ok(coordinates.some(n=>n>145));
+});
+
+test('long detailed contours split into safe paths while preserving the full extent',()=>{
+ const width=720,height=540,pixels=new Uint8Array(width*height).fill(255);
+ for(let x=10;x<710;x++){const y=100+Math.round(30*Math.sin(x/3));pixels[y*width+x]=0;const previous=100+Math.round(30*Math.sin((x-1)/3));for(let yy=Math.min(y,previous);yy<=Math.max(y,previous);yy++)pixels[yy*width+x]=0;}
+ const paths=tracePixels(pixels,width,height,{tolerance:.1});assert.ok(paths.length>1);assert.ok(paths.every(isVisibleGuide));
+ const coordinates=paths.flatMap(path=>path.match(/-?\d+(?:\.\d+)?/g).map(Number));assert.ok(coordinates.some(n=>n>=700));
+});
+
+test('parking garage prompts have no woodland instructions and honor explicit exclusions',()=>{
+ const description='a parking garage with specifically no woods';
+ const prompt=referencePrompt(description);assert.ok(prompt.includes(JSON.stringify(description)));assert.doesNotMatch(referencePrompt('parking garage'),/woods|forest|foliage|tree branches/i);assert.match(prompt,/strict constraints/);
+ const parameters=imageParameters('Qwen/Qwen-Image-2512','fal-ai',description);assert.match(parameters.negative_prompt,/trees, woods, forest/);assert.deepEqual(excludedDetails('a garage without cars'),['cars']);assert.deepEqual(excludedDetails('a garage'),[]);
+});
+
+test('more and less detail use distinct prompts and forward the choice to inference',async()=>{
+ assert.match(referencePrompt('car',0,'less'),/broad clean outlines/);assert.doesNotMatch(referencePrompt('car',0,'less'),/rich interior detail/);assert.match(referencePrompt('car',0,'more'),/rich interior detail/);
+ const bytes=await picture('<path d="M20 90 Q80 10 140 90" fill="none" stroke="black" stroke-width="2"/>');
+ for(const detail of ['more','less']){const reference=await generateReference('car',{detail,generateImage:async(description,options)=>{assert.equal(options.detail,detail);return bytes;}});assert.equal(reference.detail,detail);assert.ok(reference.paths.every(isVisibleGuide));}
+ await assert.rejects(generateReference('car',{detail:'invalid'}),/valid image detail level/);
+});
+
+test('detailed mode preserves the first image through contour recovery before requesting a simpler replacement',async()=>{
+ const bytes=await picture('<rect x="30" y="20" width="100" height="70" fill="#555"/>');let calls=0;
+ const result=await generateReference('detailed building',{detail:'more',generateImage:async()=>{calls++;return bytes;}});assert.equal(calls,1);assert.equal(result.repaired,true);assert.equal(result.detail,'more');assert.ok(result.paths.every(isVisibleGuide));
+ assert.doesNotMatch(referencePrompt('detailed building',1,'more'),/Reduce detail even further/);
 });

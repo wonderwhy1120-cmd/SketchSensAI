@@ -10,6 +10,10 @@ const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
 function inkOpacity(point,animate){if(!animate||reducedMotion.matches)return 1;const progress=Math.max(0,Math.min(1,(performance.now()-(point.drawnAt??0))/250));return 0.15+0.85*(1-Math.pow(1-progress,3));}
 let subject='house',strokes=[],undone=[],active=null,tool='pen',before=null,feedback=null,step=0,provider='demo',profile=null;
 let liveCoaching=false;
+const settingDefaults={liveSuggestions:true,shapeGuide:false,moreDetail:true,referenceReveal:'progressive'};
+let settings={...settingDefaults};
+try{settings={...settingDefaults,...JSON.parse(localStorage.getItem('sketch-settings')||'{}')};}catch{}
+if(!['progressive','whole'].includes(settings.referenceReveal))settings.referenceReveal='progressive';
 const coachIdleText='Pause after a few lines for a tip from your local drawing coach.';
 const liveCoach=new LiveCoach({
  canRun:()=>liveCoaching&&$('liveCoachEnabled').checked&&!active&&!analysisBusy&&!pendingFreehand&&!document.hidden&&!document.querySelector('dialog[open]')&&strokes.some(s=>s.tool==='pen'&&(!feedback||!originalStrokes.has(s))),
@@ -25,7 +29,22 @@ const liveCoach=new LiveCoach({
  onStatus:status=>{$('liveCoachStatus').textContent=status==='checking'?'Looking at your latest lines…':status==='ready'?'A tip for your current drawing.':'Your local coach is temporarily unavailable. Keep drawing; it will try after your next pause.';}
 });
 function resetLiveCoach(){liveCoach.pause();$('liveCoachTips').replaceChildren();$('liveCoachStatus').textContent=coachIdleText;}
-$('liveCoachEnabled').onchange=()=>{resetLiveCoach();if($('liveCoachEnabled').checked)liveCoach.change();else $('liveCoachStatus').textContent='Live suggestions are paused.';};
+$('liveCoachEnabled').onchange=()=>{settings.liveSuggestions=$('liveCoachEnabled').checked;$('settingsLiveCoach').checked=settings.liveSuggestions;saveSettings();resetLiveCoach();if($('liveCoachEnabled').checked)liveCoach.change();else $('liveCoachStatus').textContent='Live suggestions are paused.';};
+$('liveCoachEnabled').checked=!!settings.liveSuggestions;
+$('guide').checked=!!settings.shapeGuide;
+$('moreImageDetail').checked=!!settings.moreDetail;
+$('settingsLiveCoach').checked=!!settings.liveSuggestions;
+$('settingsShapeGuide').checked=!!settings.shapeGuide;
+$('settingsMoreDetail').checked=!!settings.moreDetail;
+document.querySelector(`input[name="referenceReveal"][value="${settings.referenceReveal}"]`).checked=true;
+function saveSettings(){try{localStorage.setItem('sketch-settings',JSON.stringify(settings));}catch{}}
+function showSettings(show){$('studioPage').hidden=show;$('settingsPage').hidden=!show;$('settingsBtn').setAttribute('aria-current',String(show));if(!show)updateOverlay();window.scrollTo({top:0,behavior:'smooth'});}
+$('settingsBtn').onclick=()=>showSettings(true);$('backToStudio').onclick=()=>showSettings(false);
+$('settingsLiveCoach').onchange=()=>{$('liveCoachEnabled').checked=$('settingsLiveCoach').checked;settings.liveSuggestions=$('liveCoachEnabled').checked;saveSettings();$('liveCoachEnabled').onchange();};
+$('settingsShapeGuide').onchange=()=>{$('guide').checked=$('settingsShapeGuide').checked;settings.shapeGuide=$('guide').checked;saveSettings();updateOverlay();};
+$('settingsMoreDetail').onchange=()=>{$('moreImageDetail').checked=$('settingsMoreDetail').checked;settings.moreDetail=$('moreImageDetail').checked;saveSettings();};
+document.querySelectorAll('input[name="referenceReveal"]').forEach(input=>input.onchange=()=>{settings.referenceReveal=input.value;saveSettings();if(feedback)updateOverlay();});
+$('moreImageDetail').onchange=()=>{$('settingsMoreDetail').checked=$('moreImageDetail').checked;settings.moreDetail=$('moreImageDetail').checked;saveSettings();};
 document.addEventListener('visibilitychange',()=>{if(document.hidden)liveCoach.pause();else liveCoach.change();});
 
 try{profile=JSON.parse(localStorage.getItem('sketch-profile'));}catch{}
@@ -64,9 +83,17 @@ function captureOriginalCutout(){
  $('originalCutoutImage').src=cutout.toDataURL('image/png');$('originalCutout').hidden=false;
  render();
 }
-function reset(){resetLiveCoach();analysisVersion++;analysisController?.abort();analysisBusy=false;pendingFreehand=null;$('objectChoices').hidden=true;$('objectChoiceFields').disabled=false;$('freehandPrompt').hidden=subject!=='freehand';$('freehandObject').value='';$('moreImageDetail').disabled=false;$('freehandObject').disabled=false;$('generateObjectGuide').disabled=false;$('guide').disabled=false;$('analyze').disabled=false;$('originalCutout').hidden=true;$('originalCutoutImage').removeAttribute('src');originalStrokes=new WeakSet();strokes=[];undone=[];before=null;feedback=null;step=0;$('finish').disabled=true;$('analyze').hidden=false;$('guideControls').hidden=true;$('guide').checked=false;$('overlay').style.display='none';$('feedback').innerHTML='<h3>Meet your drawing guide.</h3><p>Sketch the subject in your own way, then ask for guidance on shapes and proportions.</p><div class="coach-empty"><img class="brand-spark coach-mark" src="/ssai-logo.jpg" alt="" aria-hidden="true"><p>Your drawing guide will appear here.</p></div>';$('status').textContent='';render();}
-function select(key){if(key!==subject&&strokes.length&&!confirm('Start a new subject? Your current unsaved sketch will be cleared.'))return;subject=key;reset();$('imageDetailControl').hidden=key!=='freehand';$('canvasPrompt').textContent=key==='freehand'?'':`Try drawing a 2D ${subjects[key].name.toLowerCase()} to get started.`;$('drawingTitle').textContent=key==='freehand'?'What will you draw today?':subjects[key].title;$('finish').textContent=key==='freehand'?'Finish drawing →':'Finish & compare →';$('analyze').innerHTML=key==='freehand'?'Guess my drawing <span>↗</span>':'Get drawing guidance <span>↗</span>';$('reference').setAttribute('viewBox','0 0 800 600');$('reference').innerHTML=key==='freehand'?'':referenceMarkup(key);$('referencePhoto').hidden=true;$('reference').style.display='';$('referenceSource').replaceChildren();$('referenceLabel').textContent=key==='freehand'?'YOUR REFERENCE WILL APPEAR HERE':'SIMPLIFIED 2D REFERENCE';document.querySelectorAll('.subject').forEach(b=>b.classList.toggle('selected',b.dataset.key===key));updateOverlay();}
-for(const [key,item] of [['freehand',{name:'Freehand',level:'Choose your object'}],...Object.entries(subjects)]){const b=document.createElement('button');b.className='subject';b.dataset.key=key;b.innerHTML=`<svg viewBox="0 0 800 600" aria-hidden="true">${key==='freehand'?'<path d="M240 430 L280 310 L500 140 L580 220 L360 390 Z" fill="none" stroke="#526e57" stroke-width="18"/>':referenceMarkup(key)}</svg><span>${item.name}<small>${item.level}</small></span>`;b.onclick=()=>select(key);$('subjects').append(b);}select('house');
+function reset(){resetLiveCoach();analysisVersion++;analysisController?.abort();analysisBusy=false;pendingFreehand=null;$('objectChoices').hidden=true;$('objectChoiceFields').disabled=false;$('freehandPrompt').hidden=subject!=='freehand';$('freehandObject').value='';$('moreImageDetail').disabled=false;$('freehandObject').disabled=false;$('generateObjectGuide').disabled=false;$('guide').disabled=false;$('analyze').disabled=false;$('originalCutout').hidden=true;$('originalCutoutImage').removeAttribute('src');originalStrokes=new WeakSet();strokes=[];undone=[];before=null;feedback=null;step=0;$('finish').disabled=true;$('analyze').hidden=false;$('guideControls').hidden=true;$('guide').checked=!!settings.shapeGuide;$('settingsShapeGuide').checked=$('guide').checked;$('overlay').style.display='none';$('feedback').innerHTML='<h3>Meet your drawing guide.</h3><p>Sketch the subject in your own way, then ask for guidance on shapes and proportions.</p><div class="coach-empty"><img class="brand-spark coach-mark" src="/ssai-logo.jpg" alt="" aria-hidden="true"><p>Your drawing guide will appear here.</p></div>';$('status').textContent='';render();}
+function select(key){if(key!==subject&&strokes.length&&!confirm('Start a new subject? Your current unsaved sketch will be cleared.'))return;subject=key;reset();$('canvasPrompt').textContent=key==='freehand'?'':`Try drawing a 2D ${subjects[key].name.toLowerCase()} to get started.`;$('drawingTitle').textContent=key==='freehand'?'What will you draw today?':subjects[key].title;$('finish').textContent=key==='freehand'?'Finish drawing →':'Finish & compare →';$('analyze').innerHTML=key==='freehand'?'Guess my drawing <span>↗</span>':'Get drawing guidance <span>↗</span>';$('reference').setAttribute('viewBox','0 0 800 600');$('reference').innerHTML=key==='freehand'?'':referenceMarkup(key);$('referencePhoto').hidden=true;$('reference').style.display='';$('referenceSource').replaceChildren();$('referenceLabel').textContent=key==='freehand'?'YOUR REFERENCE WILL APPEAR HERE':'SIMPLIFIED 2D REFERENCE';document.querySelectorAll('.subject').forEach(b=>b.classList.toggle('selected',b.dataset.key===key));$('presetsMenu').hidden=true;$('presetsToggle').setAttribute('aria-expanded','false');$('presetsToggle').textContent='Presets ▾';updateOverlay();}
+function addSubjectButton(key,item,parent){const b=document.createElement('button');b.className='subject';b.dataset.key=key;b.innerHTML=`<svg viewBox="0 0 800 600" aria-hidden="true">${key==='freehand'?'<path d="M240 430 L280 310 L500 140 L580 220 L360 390 Z" fill="none" stroke="#526e57" stroke-width="18"/>':referenceMarkup(key)}</svg><span>${item.name}<small>${item.level}</small></span>`;b.onclick=()=>select(key);parent.append(b);}
+const subjectMenu=$('subjects'),presetMenu=document.createElement('div');
+addSubjectButton('freehand',{name:'Freehand',level:'Choose your object'},subjectMenu);
+const presetsToggle=document.createElement('button');presetsToggle.id='presetsToggle';presetsToggle.className='presets-toggle';presetsToggle.type='button';presetsToggle.textContent='Presets ▾';presetsToggle.setAttribute('aria-expanded','false');presetsToggle.setAttribute('aria-controls','presetsMenu');subjectMenu.append(presetsToggle);
+presetMenu.id='presetsMenu';presetMenu.className='presets-menu';presetMenu.hidden=true;
+for(const [key,item] of Object.entries(subjects))addSubjectButton(key,item,presetMenu);
+subjectMenu.append(presetMenu);
+presetsToggle.onclick=()=>{const open=presetMenu.hidden;presetMenu.hidden=!open;presetsToggle.setAttribute('aria-expanded',String(open));presetsToggle.textContent=open?'Presets ▴':'Presets ▾';};
+select('freehand');
 function sketchAnchors(){return strokes.filter(s=>s.tool==='pen').slice(0,12).map(s=>{const count=Math.min(8,s.points.length);return Array.from({length:count},(_,i)=>{const p=s.points[count===1?0:Math.round(i*(s.points.length-1)/(count-1))];return [Math.round(Math.max(0,Math.min(800,p.x))),Math.round(Math.max(0,Math.min(600,p.y)))];});});}
 async function referenceSnapshot(key){const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="${key==='freehand'?$('reference').getAttribute('viewBox'):'0 0 800 600'}"><rect width="800" height="600" fill="#fffef9"/>${key==='freehand'?$('reference').innerHTML:referenceMarkup(key)}</svg>`;const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));try{const img=new Image();await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('Unable to prepare reference image'));img.src=url;});const c=document.createElement('canvas');c.width=400;c.height=300;const x=c.getContext('2d');x.fillStyle='#fffef9';x.fillRect(0,0,400,300);x.drawImage(img,0,0);return c.toDataURL('image/png');}finally{URL.revokeObjectURL(url);}}
 function freehandRecovery(){const paths=sketchAnchors().map(points=>points.length>1?points.map(([x,y],i)=>`${i?'L':'M'}${x} ${y}`).join(' '):`M${Math.max(0,points[0][0]-10)} ${points[0][1]} L${Math.min(800,points[0][0]+10)} ${points[0][1]}`);return {source:'geometry',match:'freehand',summary:'Recognition is unavailable. This guide follows your current sketch without guessing an object.',steps:[{title:'Refine your sketch',instruction:'Keep practicing these shapes, then clear and try recognition again.',path:paths.join(' ')}]};}
@@ -95,25 +122,28 @@ function updateReferenceReveal(){
  if(!feedback?.steps?.length)return;
  const reference=$('reference'),photo=$('referencePhoto');
  reference.replaceChildren();reference.style.display='';photo.hidden=true;
- reference.setAttribute('aria-label',`Reference build-up, part ${step+1} of ${feedback.steps.length}`);
+ reference.setAttribute('aria-label','Complete reference picture');
+ if(feedback.reference?.raster&&feedback.reference.url){
+  reference.style.display='none';photo.src=feedback.reference.url;photo.alt=`Complete line-art reference for ${feedback.object||'your drawing'}`;photo.hidden=false;$('referenceLabel').textContent='COMPLETE REFERENCE';return;
+ }
  const group=document.createElementNS('http://www.w3.org/2000/svg','g');
  group.setAttribute('fill','none');group.setAttribute('stroke','#526e57');group.setAttribute('stroke-width','3');group.setAttribute('stroke-linecap','round');group.setAttribute('stroke-linejoin','round');
  const bounds=document.createElementNS('http://www.w3.org/2000/svg','g');bounds.setAttribute('visibility','hidden');
- for(const [index,part] of feedback.steps.entries()){
+ for(const part of feedback.steps){
   const d=part.path||'';
   if(!d)continue;
   const shape=document.createElementNS('http://www.w3.org/2000/svg','path');shape.setAttribute('d',d);shape.setAttribute('pathLength','1');
   bounds.append(shape);
-  if(index<=step){shape.classList.add(index===step?'reference-piece-current':'reference-piece');group.append(shape);}
+  shape.classList.add('reference-piece');group.append(shape);
  }
  reference.append(group,bounds);
  try{const b=bounds.getBBox(),padding=Math.max(12,Math.max(b.width,b.height)*.08);reference.setAttribute('viewBox',`${b.x-padding} ${b.y-padding} ${b.width+2*padding} ${b.height+2*padding}`);}catch{reference.setAttribute('viewBox','0 0 800 600');}
  bounds.remove();
- $('referenceLabel').textContent=`REFERENCE · PART ${step+1} OF ${feedback.steps.length}`;
+ $('referenceLabel').textContent='COMPLETE REFERENCE';
 }
 function showFeedback(){resetLiveCoach();liveCoach.change();const box=$('feedback');box.replaceChildren();textElement('h3',feedback.reference?.fallback&&!feedback.reference.matched?feedback.reference.title:`Your ${feedback.object||subjects[feedback.match]?.name?.toLowerCase()||feedback.match} guide`,box);textElement('p',feedback.summary,box);if(subject==='freehand'&&!feedback.object){$('reference').innerHTML='';$('referencePhoto').hidden=true;$('referenceSource').replaceChildren();$('referenceLabel').textContent='ADD DETAILS TO FIND A REFERENCE';}if(feedback.object){$('referenceSource').replaceChildren();textElement('p',feedback.chosen?`Selected object: ${feedback.object}`:`Best guess: ${feedback.object} · ${feedback.confidence} confidence`,box);if(!feedback.chosen&&feedback.confidence==='low')textElement('p','This is one possible interpretation of your starting lines. The guide shows how to turn them into that object.',box);$('reference').innerHTML=subjects[feedback.match]?referenceMarkup(feedback.match):'';if(feedback.simplifiedReference){showSimplifiedReference();}else if(feedback.reference){$('referencePhoto').src=feedback.reference.url;$('referencePhoto').alt=`Reference for ${feedback.object}`;$('referencePhoto').hidden=false;$('reference').style.display='none';const link=textElement('a',`${feedback.reference.artist||'Wikimedia Commons'} · ${feedback.reference.license||'Source and license'}`,$('referenceSource'));link.href=feedback.reference.sourceUrl;link.target='_blank';link.rel='noopener noreferrer';$('referenceLabel').textContent=`REFERENCE: ${feedback.object.toUpperCase()}`;}else{textElement('p','Reference image search unavailable; using a simplified guide.',box);}}textElement('p',feedback.source==='template'?'PRESET TEMPLATE COACHING':feedback.source==='geometry'?'STARTING-LINE CONSTRUCTION':feedback.guideSource==='geometry'?'AI FEEDBACK · AUTOMATIC REFERENCE ALIGNMENT':feedback.guideSource==='reference'?'REFERENCE TRACING GUIDE':feedback.guideSource==='simplified'?'SIMPLIFIED 2D TRACING GUIDE':feedback.guideSource==='online-reference'?'ONLINE REFERENCE TRACING GUIDE':feedback.reference?.composed?'SIMPLE 2D TRACING GUIDE':feedback.guideSource==='fallback-reference'?'SIMPLIFIED BACKUP TRACING GUIDE':feedback.guideSource==='generated'?'AI-GENERATED REFERENCE TRACING GUIDE':'VISION MODEL FEEDBACK',box).className='source';textElement('h3','How to improve',box);if(feedback.improvement)textElement('p',feedback.improvement,box);showSuggestions(feedback.suggestions,box);const item=feedback.steps[step];textElement('h3',item.title,box);textElement('p',item.instruction,box);$('stepProgress').textContent=`Part ${step+1} of ${feedback.steps.length}`;$('previous').disabled=step===0;$('next').hidden=step===feedback.steps.length-1;$('finish').hidden=step!==feedback.steps.length-1;$('guideControls').hidden=false;$('finish').disabled=false;updateReferenceReveal();updateOverlay();}
 function updateOverlay(){
- const overlay=$('overlay'),path=feedback?.steps[step]?.path;
+ const overlay=$('overlay'),path=feedback?.steps?(settings.referenceReveal==='whole'?feedback.steps.map(item=>item.path||'').filter(Boolean).join(' '):feedback.steps[step]?.path):null;
  overlay.innerHTML=path?`<g><path d="${path}" fill="none" stroke="#b47b38" stroke-width="${feedback.reference?.raster?3:4}" ${feedback.reference?.raster?'':'stroke-dasharray="10 8"'} vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/></g>`:feedback||subject==='freehand'?'':referenceMarkup(subject,'#b47b38');
  // Measure every part together so the same fitting transform applies throughout the guide.
  if(feedback&&path){
@@ -136,7 +166,7 @@ function updateOverlay(){
  }
  overlay.style.display=$('guide').checked?'block':'none';render();
 }
-$('guide').onchange=updateOverlay;
+$('guide').onchange=()=>{settings.shapeGuide=$('guide').checked;$('settingsShapeGuide').checked=settings.shapeGuide;saveSettings();updateOverlay();};
 $('previous').onclick=()=>{if(step>0){step--;showFeedback();}};
 $('next').onclick=()=>{if(feedback&&step<feedback.steps.length-1){step++;showFeedback();}};
 function showSuggestions(suggestions,box){
@@ -180,7 +210,7 @@ async function analyzeSketch(selectedObject=null){
   if(version!==analysisVersion)return;
   if(data.needsSelection){showObjectChoices(data,payload);return;}
   if(!feedback){if(subject!=='freehand'){before=payload.image;captureOriginalCutout();}originalStrokes=new WeakSet(strokes);}
-  pendingFreehand=null;$('objectChoices').hidden=true;$('freehandPrompt').hidden=true;feedback=data;step=0;$('guide').checked=true;showFeedback();
+  pendingFreehand=null;$('objectChoices').hidden=true;$('freehandPrompt').hidden=true;feedback=data;step=0;$('guide').checked=!!settings.shapeGuide;$('settingsShapeGuide').checked=$('guide').checked;showFeedback();
   $('status').textContent=feedback.reference?.fallback?feedback.reference.notice+' Trace each part, then finish your drawing.':feedback.source==='template'?'Preset coaching is active. Connect a vision model for personalized feedback.':feedback.feedbackUnavailable?'Your reference is ready. AI practice feedback is temporarily unavailable.':subject==='freehand'?'Your reference is ready. Trace each part, then finish and save your drawing.':feedback.guideSource==='generated'?'Your AI-generated reference is ready. Trace each part, then compare your drawings.':'Trace the reference drawing one part at a time, then compare your drawings.';
  }catch(error){
   if(version!==analysisVersion||error.name==='AbortError')return;
@@ -189,7 +219,7 @@ async function analyzeSketch(selectedObject=null){
    if(!pendingFreehand)$('analyze').hidden=false;
   }else{
    if(!before){before=payload.image;captureOriginalCutout();originalStrokes=new WeakSet(strokes);}
-   feedback=strokeGuidance(subject,sketchAnchors());$('guide').checked=true;showFeedback();
+   feedback=strokeGuidance(subject,sketchAnchors());$('guide').checked=!!settings.shapeGuide;$('settingsShapeGuide').checked=$('guide').checked;showFeedback();
    $('status').textContent=`${error.message}. Showing a construction guide built around your starting line instead.`;
   }
  }finally{
